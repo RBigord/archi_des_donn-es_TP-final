@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: pretoutil
+      POSTGRES_USER: pretoutil
+      POSTGRES_PASSWORD: pretoutil
+    ports:
+      # 5433 côté machine pour ne pas gêner un PostgreSQL déjà installé.
+      - "5433:5432"
+    volumes:
+      # Exécuté automatiquement au premier démarrage (base vide).
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./queries.sql:/queries/queries.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pretoutil -d pretoutil"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Remplit la base avec seed.py, puis s'arrête.
+  seed:
+    build: .
+    command: python seed.py
+    environment: &pg
+      PGHOST: db
+      PGDATABASE: pretoutil
+      PGUSER: pretoutil
+      PGPASSWORD: pretoutil
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Application en ligne de commande : docker compose run --rm app <commande>
+  app:
+    build: .
+    entrypoint: ["python", "app.py"]
+    command: ["--help"]
+    environment: *pg
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
